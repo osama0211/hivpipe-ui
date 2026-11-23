@@ -498,3 +498,29 @@ needed.
 - `runs/<id>/` holds `command.txt`, `run.log`, `nextflow.log`, `run.json` and
   `output/`. The trace, timeline and report Nextflow writes are under
   `output/_trace/`.
+
+## License
+
+This project's own code — the Nextflow workflows, the QC scripts, the web UI
+and the cluster launcher — is MIT licensed. See [LICENSE](LICENSE).
+
+That covers the wrapper, not what it wraps. The five assembly pipelines and
+the container images they run in are separate works under their own licenses,
+and nothing here changes or extends those terms:
+
+| Tool | Where it comes from |
+|---|---|
+| shiver | ChrisHIV/shiver, run via `ghcr.io/hcovlab/dshiver` |
+| V-pipe | cbg-ethz/V-pipe, run via `ghcr.io/cbg-ethz/v-pipe` |
+| SmaltAlign | SmaltAlign, built locally from `containers/smaltalign/` |
+| viral-ngs | Broad Institute viral-ngs (`broadinstitute/viral-assemble`) |
+| HIVGenoPipe | HIVGenoPipe, built locally from `containers/hivgenopipe/` |
+
+If you publish results produced with this runner, cite the pipelines
+themselves — this repository orchestrates them, it does not replace them.
+`versions.yml` in each run's output records the versions actually used.
+
+`refs/HXB2.fasta` is the HIV-1 HXB2 reference (GenBank K03455). Files under
+`demo_data/` derive from the public accession DRR030147 plus synthetic reads
+for testing. No patient-derived data is included, and none should be added —
+see the `.gitignore` entries for `data/`.
