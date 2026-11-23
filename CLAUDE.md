@@ -45,7 +45,10 @@ These exist because each was violated once and cost a day.
    /path/actually/used` at the top of a run log turns a future mystery
    into one line.
 
-## Cluster facts: access.irgetas.nu.edu.kz (Nazarbayev University)
+## Cluster facts: the target SLURM cluster
+
+A university HPC: Lmod modules, BeeGFS home, Singularity. The host, user
+and paths live in `hpc.yaml`, which is deliberately untracked.
 
 - Scheduler: SLURM. **There is no partition named `normal`.** Do not set
   a default partition — leave it unset so SLURM picks the site default.
