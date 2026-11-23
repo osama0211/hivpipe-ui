@@ -1,0 +1,26 @@
+# Paths the app reads at startup. Environment variables override these, which
+# is how docker-compose sets them — see docker-compose.yml.
+#
+#   HIVPIPE_DATA_DIR  HIVPIPE_RUNS_DIR  HIVPIPE_REFS_DIR
+#   HIVPIPE_WORK_DIR  HIVPIPE_PROFILE   HIVPIPE_THREADS
+
+# Folder holding your pre-downloaded FASTQ files. Scanned recursively.
+data_dir: ./demo_data
+
+# Where run outputs are written. One subfolder per run.
+runs_dir: ./runs
+
+# Uploaded reference material. Subfolders: reference/ primers/ adapters/ panel/
+ref_dir: ./refs
+
+# Nextflow work directory. Keep it on fast local disk.
+work_dir: ./work
+
+# Nextflow profile: docker, singularity, slurm, local, or stub.
+profile: docker
+
+# Default thread count offered in the UI.
+threads: 8
+
+# Runs executing at once. Further runs queue.
+max_concurrent: 1

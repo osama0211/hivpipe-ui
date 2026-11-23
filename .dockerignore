@@ -1,0 +1,9 @@
+work/
+runs/
+.nextflow*
+__pycache__/
+*.pyc
+node_modules/
+demo_data/
+.git/
+hpc.yaml

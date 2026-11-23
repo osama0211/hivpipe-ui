@@ -1,0 +1,35 @@
+# Runtime output — one directory per run, written by the app.
+runs/
+state/
+work/
+results/
+exit_code
+launch.pid
+run.log
+.nextflow*
+
+# Local cluster settings: hostname, username and remote paths. The app
+# recreates this on first use; it holds no password.
+hpc.yaml
+
+# Credentials for the interpretation assistant, mode 600 on disk.
+assistant_keys.json
+.env
+
+# Windows "downloaded from the internet" markers.
+*:Zone.Identifier
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Container images
+*.sif
+*.img
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/

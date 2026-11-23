@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=HIV Pipeline Runner
+Comment=Run five HIV-1 assembly pipelines without a command line
+Exec=/opt/hivpipe-runner/HIV Pipeline Runner
+Icon=/opt/hivpipe-runner/icon.png
+Terminal=false
+Categories=Science;Biology;
+StartupNotify=true

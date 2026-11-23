@@ -1,0 +1,111 @@
+name: Build desktop application
+
+# Builds an installable application for Windows, macOS and Linux.
+# PyInstaller cannot cross-compile, so each one is built on its own runner.
+#
+# Push a tag to attach the results to a release:
+#     git tag v1.1.0 && git push --tags
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows
+          - os: macos-latest
+            name: macos
+          - os: ubuntu-22.04
+            name: linux
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # pywebview needs a system webview on Linux; Windows and macOS have one.
+      # Windows and macOS ship tkinter with Python; Linux needs the package.
+      # The webview libraries are only for the headless fallback path.
+      - name: Install Linux GUI dependencies
+        if: matrix.name == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk \
+                                  python3-gi python3-gi-cairo gir1.2-gtk-3.0 \
+                                  gir1.2-webkit2-4.1 libgirepository1.0-dev
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller pillow
+          pip install pywebview || echo "pywebview unavailable; browser fallback"
+
+      - name: Ensure the icon exists
+        shell: bash
+        run: python packaging/make_icon.py
+
+      - name: Fetch Nextflow launcher
+        shell: bash
+        run: |
+          mkdir -p packaging/vendor
+          curl -fsSL \
+            "https://github.com/nextflow-io/nextflow/releases/download/v24.10.4/nextflow-24.10.4-dist" \
+            -o packaging/vendor/nextflow || true
+          chmod +x packaging/vendor/nextflow || true
+
+      - name: Build
+        run: pyinstaller packaging/hivpipe.spec --noconfirm --clean
+
+      - name: Build Windows installer
+        if: matrix.name == 'windows'
+        run: |
+          choco install innosetup --no-progress -y
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" packaging\installer.iss
+        shell: pwsh
+
+      - name: Package macOS
+        if: matrix.name == 'macos'
+        run: |
+          cd dist
+          zip -qry "HIVPipeRunner-macos.zip" "HIV Pipeline Runner.app"
+
+      - name: Package Linux
+        if: matrix.name == 'linux'
+        run: |
+          cd dist
+          tar czf "HIVPipeRunner-linux.tar.gz" "HIV Pipeline Runner"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hivpipe-${{ matrix.name }}
+          path: |
+            Output/HIVPipeRunner-Setup.exe
+            dist/HIVPipeRunner-macos.zip
+            dist/HIVPipeRunner-linux.tar.gz
+          if-no-files-found: warn
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true

@@ -1,0 +1,68 @@
+# docker compose up -d   →  http://localhost:8000
+#
+# The app container runs the web interface and Nextflow. Nextflow starts each
+# pipeline in its own container through the mounted Docker socket, so the
+# pipelines are siblings of this container rather than nested inside it.
+#
+# That socket mount gives the app container control of the host Docker daemon,
+# which is effectively root on the host. Run this on a machine you control,
+# and do not expose port 8000 beyond localhost without putting authentication
+# in front of it.
+
+services:
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: hivpipe/app:1.0.0
+    container_name: hivpipe
+    restart: unless-stopped
+
+    ports:
+      - "127.0.0.1:8000:8000"
+
+    volumes:
+      # Pipeline containers are started as siblings, not children.
+      - /var/run/docker.sock:/var/run/docker.sock
+
+      # Your data. Edit the host side of each line; leave the container side.
+      - ${HIVPIPE_DATA:-./demo_data}:/data/reads:ro
+      - ${HIVPIPE_RUNS:-./runs}:/data/runs
+      - ${HIVPIPE_REFS:-./refs}:/data/refs
+
+      # Nextflow work directory. On the host so a restart can resume a run,
+      # and at the same path inside and out so sibling containers resolve it.
+      - ${HIVPIPE_WORK:-./work}:${HIVPIPE_WORK:-/work}
+
+    environment:
+      HIVPIPE_DATA_DIR: /data/reads
+      HIVPIPE_RUNS_DIR: /data/runs
+      HIVPIPE_REFS_DIR: /data/refs
+      HIVPIPE_WORK_DIR: ${HIVPIPE_WORK:-/work}
+      HIVPIPE_PROFILE: ${HIVPIPE_PROFILE:-docker}
+      HIVPIPE_THREADS: ${HIVPIPE_THREADS:-8}
+      NXF_OFFLINE: "false"
+
+  # One-shot: pulls and builds every pipeline image so the first real run
+  # does not stall on a download.
+  #   docker compose --profile setup run --rm warm-images
+  warm-images:
+    image: docker:27-cli
+    profiles: ["setup"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - .:/src:ro
+    working_dir: /src
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        echo "Pulling published images"
+        docker pull ghcr.io/hcovlab/dshiver:latest
+        docker pull ghcr.io/cbg-ethz/v-pipe:master
+        docker pull quay.io/broadinstitute/viral-assemble:2.4.1.0
+        echo "Building the rest"
+        docker build -t hivpipe/smaltalign:1.0.0  -f containers/smaltalign/Dockerfile  .
+        docker build -t hivpipe/hivgenopipe:1.0.0 -f containers/hivgenopipe/Dockerfile .
+        echo "All pipeline images ready"

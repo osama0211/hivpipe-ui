@@ -1,0 +1,1206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HIV pipeline runner</title>
+<style>
+  :root{
+    --bg:#eaeef2; --surface:#ffffff; --surface-2:#f5f7f9;
+    --ink:#16202b; --muted:#5a6b7b; --line:#d2dae2; --line-soft:#e3e9ee;
+    --accent:#0b6e99; --accent-soft:#e6f1f7;
+    --amber:#8a5200; --amber-soft:#fdf2e2;
+    --teal:#0f6f62; --teal-soft:#e3f2ef;
+    --red:#a52018; --red-soft:#fbeae8;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --radius:3px;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#10161d; --surface:#172029; --surface-2:#1d2832;
+      --ink:#e4eaf0; --muted:#94a5b5; --line:#2c3a47; --line-soft:#232f3a;
+      --accent:#52a8d0; --accent-soft:#17303d;
+      --amber:#d79b4a; --amber-soft:#30261a;
+      --teal:#5bbfae; --teal-soft:#152c28;
+      --red:#e88b82; --red-soft:#331d1b;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#10161d; --surface:#172029; --surface-2:#1d2832;
+    --ink:#e4eaf0; --muted:#94a5b5; --line:#2c3a47; --line-soft:#232f3a;
+    --accent:#52a8d0; --accent-soft:#17303d;
+    --amber:#d79b4a; --amber-soft:#30261a;
+    --teal:#5bbfae; --teal-soft:#152c28;
+    --red:#e88b82; --red-soft:#331d1b;
+  }
+  *{box-sizing:border-box}
+  /* An explicit display rule beats the hidden attribute, so restore it. */
+  [hidden]{display:none !important}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink); font-family:var(--sans);
+    font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased;
+  }
+  button,input,select{font:inherit;color:inherit}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  /* ---------- frame ---------- */
+  .masthead{
+    display:flex;align-items:baseline;gap:18px;flex-wrap:wrap;
+    padding:14px 20px;background:var(--surface);
+    border-bottom:1px solid var(--line);
+  }
+  .masthead h1{font-size:15px;font-weight:650;margin:0;letter-spacing:-.01em}
+  .paths{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-left:auto}
+  .paths code{font-family:var(--mono);font-size:11.5px;color:var(--ink)}
+
+  .shell{
+    display:grid;grid-template-columns:320px 1fr;gap:1px;
+    background:var(--line);min-height:calc(100vh - 51px);
+  }
+  .col{background:var(--bg);display:flex;flex-direction:column;min-width:0}
+  .colhead{
+    display:flex;align-items:center;gap:10px;
+    padding:11px 16px 9px;background:var(--surface);
+    border-bottom:1px solid var(--line);
+  }
+  .colhead h2{font-size:13px;font-weight:650;margin:0}
+  .count{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .pad{padding:16px}
+
+  /* ---------- samples ---------- */
+  .search{
+    width:100%;padding:7px 10px;border:1px solid var(--line);
+    border-radius:var(--radius);background:var(--surface);
+  }
+  .samples{flex:1;overflow-y:auto;max-height:calc(100vh - 160px)}
+  .sample{
+    display:block;width:100%;text-align:left;cursor:pointer;
+    padding:9px 16px 9px 13px;background:transparent;border:0;
+    border-left:3px solid transparent;border-bottom:1px solid var(--line-soft);
+  }
+  .sample:hover{background:var(--surface-2)}
+  .sample[aria-pressed="true"]{background:var(--accent-soft);border-left-color:var(--accent)}
+  .sample .nm{font-family:var(--mono);font-size:12.5px;word-break:break-all}
+  .sample .meta{font-size:11.5px;color:var(--muted);margin-top:2px}
+  .empty{padding:28px 16px;color:var(--muted);font-size:13px}
+
+  /* ---------- pipelines ---------- */
+  .pipes{display:flex;flex-direction:column;gap:6px;margin:0 0 18px}
+  .pipe{
+    display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;
+    text-align:left;cursor:pointer;padding:11px 14px;
+    background:var(--surface);border:1px solid var(--line);
+    border-radius:var(--radius);
+  }
+  .pipe:hover:not(:disabled){border-color:var(--accent)}
+  .pipe[aria-pressed="true"]{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}
+  .pipe:disabled{cursor:not-allowed;opacity:.55}
+  .dial{
+    width:13px;height:13px;border-radius:50%;
+    border:2px solid var(--muted);flex:none;
+  }
+  .pipe[aria-pressed="true"] .dial{border-color:var(--accent);background:var(--accent);box-shadow:inset 0 0 0 2px var(--surface)}
+  .pipe .nm{font-weight:600}
+  .pipe .blurb{font-size:12px;color:var(--muted);margin-top:1px}
+  .tag{font-size:11px;padding:2px 7px;border-radius:999px;white-space:nowrap}
+  .tag.ok{background:var(--teal-soft);color:var(--teal)}
+  .tag.no{background:var(--red-soft);color:var(--red)}
+
+  .controls{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
+  .field{display:flex;flex-direction:column;gap:4px}
+  .field label{font-size:12px;color:var(--muted)}
+  .field input{width:88px;padding:7px 9px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}
+
+  /* ---------- reference files ---------- */
+  .refgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
+  .refslot{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:11px 12px}
+  .refslot h3{font-size:12.5px;margin:0 0 2px;font-weight:650}
+  .refslot .use{font-size:11.5px;color:var(--muted);margin-bottom:8px}
+  .refslot select{
+    width:100%;padding:6px 8px;border:1px solid var(--line);
+    border-radius:var(--radius);background:var(--surface-2);font-size:12.5px;
+  }
+  .refslot.off{opacity:.45}
+  /* A required slot with nothing chosen: the one thing on this screen that
+     will stop the run, so it is the one thing that carries colour. */
+  .refslot.needed{border-color:var(--amber);box-shadow:inset 3px 0 0 var(--amber)}
+  .refslot .req{font-size:10px;font-weight:600;text-transform:uppercase;
+    letter-spacing:.04em;color:var(--amber);margin-left:5px;
+    vertical-align:1px}
+  .refslot.needed .use{color:var(--amber)}
+  .uprow{display:flex;align-items:center;gap:8px;margin-top:7px}
+  .upbtn{
+    font-size:12px;padding:4px 10px;background:var(--surface-2);
+    border:1px solid var(--line);border-radius:var(--radius);cursor:pointer;
+  }
+  .upbtn:hover{border-color:var(--accent);color:var(--accent)}
+  .upmsg{font-size:11.5px;color:var(--muted)}
+  .upmsg.bad{color:var(--red)}
+  .upmsg.good{color:var(--teal)}
+  .go{
+    padding:9px 20px;background:var(--accent);color:#fff;border:0;
+    border-radius:var(--radius);font-weight:600;cursor:pointer;
+  }
+  .go:disabled{background:var(--muted);cursor:not-allowed;opacity:.6}
+  .hint{font-size:12px;color:var(--muted)}
+
+  /* ---------- run readout ---------- */
+  .readout{
+    background:var(--surface);border:1px solid var(--line);
+    border-radius:var(--radius);overflow:hidden;margin-top:4px;
+  }
+  .bar{
+    display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+    padding:11px 14px;border-left:4px solid var(--muted);
+  }
+  .bar.running{border-left-color:var(--amber);background:var(--amber-soft)}
+  .bar.complete{border-left-color:var(--teal);background:var(--teal-soft)}
+  .bar.failed,.bar.interrupted{border-left-color:var(--red);background:var(--red-soft)}
+  .bar.cancelled,.bar.cancelling{border-left-color:var(--muted);background:var(--surface-2)}
+  .state{font-weight:650;font-size:13px}
+  .bar .who{font-family:var(--mono);font-size:12px;color:var(--muted);word-break:break-all}
+  .bar .spacer{margin-left:auto;display:flex;gap:8px}
+  .mini{
+    padding:5px 12px;background:var(--surface);border:1px solid var(--line);
+    border-radius:var(--radius);cursor:pointer;font-size:12.5px;text-decoration:none;color:inherit;
+    display:inline-block;
+  }
+  .mini:hover{border-color:var(--accent);color:var(--accent)}
+
+  .pulse{width:7px;height:7px;border-radius:50%;background:var(--amber);animation:beat 1.4s ease-in-out infinite}
+  @keyframes beat{0%,100%{opacity:1}50%{opacity:.25}}
+  @media (prefers-reduced-motion:reduce){.pulse{animation:none}}
+
+  /* ---------- qc ---------- */
+  .qc{padding:12px 14px;border-top:1px solid var(--line-soft)}
+  .qc h3{font-size:12.5px;margin:0 0 6px;font-weight:650}
+  .qc .verdict{font-size:13px;margin-bottom:8px}
+  .qc .verdict.pass{color:var(--teal)}
+  .qc .verdict.warn{color:var(--amber)}
+  .qc .verdict.fail{color:var(--red)}
+  .qc ul{margin:0;padding-left:18px}
+  .qc li{font-size:12.5px;margin-bottom:4px}
+  .qc .comp{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin-top:8px}
+
+  /* ---------- log ---------- */
+  .logwrap{border-top:1px solid var(--line-soft)}
+  .logbar{display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--surface-2)}
+  .logbar h3{font-size:12.5px;margin:0;font-weight:650}
+  .logbar label{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px;margin-left:auto}
+  pre.log{
+    margin:0;padding:12px 14px;max-height:300px;overflow:auto;
+    font-family:var(--mono);font-size:11.5px;line-height:1.55;
+    background:var(--surface);white-space:pre-wrap;word-break:break-word;
+  }
+
+  /* ---------- history ---------- */
+  .hist{width:100%;border-collapse:collapse;font-size:12.5px;background:var(--surface)}
+  .hist th{
+    text-align:left;font-weight:600;color:var(--muted);font-size:12px;
+    padding:8px 14px;border-bottom:1px solid var(--line);
+  }
+  .hist td{padding:8px 14px;border-bottom:1px solid var(--line-soft)}
+  .hist tr{cursor:pointer}
+  .hist tr:hover td{background:var(--surface-2)}
+  .hist tr[aria-selected="true"] td{background:var(--accent-soft)}
+  .hist .sm{font-family:var(--mono);font-size:11.5px}
+  .chip{font-size:11px;padding:2px 8px;border-radius:999px;white-space:nowrap}
+  .chip.running{background:var(--amber-soft);color:var(--amber)}
+  .chip.complete{background:var(--teal-soft);color:var(--teal)}
+  .chip.failed,.chip.interrupted{background:var(--red-soft);color:var(--red)}
+  .chip.queued,.chip.cancelled,.chip.cancelling{background:var(--surface-2);color:var(--muted)}
+
+  .section{margin-top:22px}
+  .section > h2{
+    font-size:13px;font-weight:650;margin:0 0 10px;
+    padding-bottom:7px;border-bottom:1px solid var(--line);
+  }
+  .histwrap{border:1px solid var(--line);border-radius:var(--radius);overflow-x:auto}
+
+  /* ---------- capability banner ---------- */
+  #capbar{
+    background:var(--amber-soft);border-bottom:1px solid var(--line);
+    padding:10px 20px;font-size:12.5px;
+    display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;
+  }
+  #capbar strong{color:var(--amber)}
+  #capbar .grow{flex:1 1 320px;color:var(--ink)}
+  #capbar button{
+    background:var(--surface);border:1px solid var(--line);
+    border-radius:var(--radius);padding:4px 11px;cursor:pointer;font-size:12px;
+  }
+  #capbar button:hover{border-color:var(--accent);color:var(--accent)}
+  .capdetail{padding:0 20px 12px;background:var(--amber-soft);
+             border-bottom:1px solid var(--line)}
+  .capdetail ul{list-style:none;margin:0;padding:0}
+  .capdetail li{display:flex;gap:9px;padding:3px 0;font-size:12.5px;align-items:baseline}
+  .capdetail .mark{width:14px;font-weight:700;flex:none}
+  .capdetail .what{min-width:230px}
+  .capdetail .detail{color:var(--muted);font-size:11.5px}
+
+  /* ---------- where it runs ---------- */
+  .where{display:flex;gap:0;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+  .where button{
+    flex:1;padding:7px 14px;background:var(--surface);border:0;cursor:pointer;
+    font-size:12.5px;border-right:1px solid var(--line);
+  }
+  .where button:last-child{border-right:0}
+  .where button[aria-pressed="true"]{background:var(--accent);color:#fff;font-weight:600}
+  .where button:disabled{opacity:.5;cursor:not-allowed}
+
+  .hpcpanel{
+    background:var(--surface);border:1px solid var(--line);
+    border-radius:var(--radius);padding:14px;margin-top:10px;
+  }
+  .hpcgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}
+  .hpcgrid label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted)}
+  .hpcgrid input,.hpcgrid select{
+    padding:6px 8px;border:1px solid var(--line);border-radius:var(--radius);
+    background:var(--surface-2);font-size:12.5px;color:var(--ink);
+  }
+  .hpcgrid .wide{grid-column:1/-1}
+  .probe{margin-top:12px;border-top:1px solid var(--line-soft);padding-top:10px}
+  .probe ul{list-style:none;margin:0;padding:0}
+  .probe li{display:flex;gap:8px;font-size:12.5px;padding:3px 0;align-items:baseline}
+  .probe .mark{font-weight:700;width:14px;flex:none}
+  .probe .yes{color:var(--teal)}
+  .probe .no{color:var(--red)}
+  .probe .what{min-width:135px}
+  .probe .detail{color:var(--muted);font-family:var(--mono);font-size:11.5px;word-break:break-all}
+  @media (max-width:860px){
+    .shell{grid-template-columns:1fr}
+    .samples{max-height:300px}
+    .hist{min-width:560px}
+    .pad{padding:14px}
+  }
+.interpret{margin-top:14px;border-top:1px solid var(--line);padding-top:10px}
+.interpret .probe{margin-top:8px}
+.interpret .probe ul{margin:6px 0 0 18px;padding:0}
+.interpret .probe li{margin:2px 0}
+.interpret .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0}
+.interpret label{display:flex;gap:6px;align-items:center;font-size:13px}
+.interpret input[type=text],.interpret input[type=password],.interpret input:not([type]),
+.interpret select{padding:6px 8px;border:1px solid var(--line);border-radius:var(--radius);
+  background:var(--surface);color:inherit;font:inherit;font-size:13px}
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <h1>HIV pipeline runner</h1>
+  <div class="paths">
+    <span>Reads <code id="p-data">…</code></span>
+    <span>Results <code id="p-runs">…</code></span>
+    <span>Engine <code id="p-profile">…</code></span>
+    <span>Build <code id="p-version">…</code></span>
+  </div>
+</header>
+
+<div id="capbar" hidden></div>
+
+<div class="shell">
+
+  <section class="col">
+    <div class="colhead">
+      <h2>Samples</h2>
+      <span class="count" id="n-samples"></span>
+      <button class="mini" id="rescan" style="margin-left:auto">Rescan</button>
+    </div>
+    <div class="pad" style="padding-bottom:10px">
+      <div class="where" role="group" aria-label="Where to run">
+        <button id="loc-local" aria-pressed="true">This machine</button>
+        <button id="loc-hpc" aria-pressed="false">HPC cluster</button>
+      </div>
+      <input class="search" id="q" type="search" placeholder="Filter by name"
+             aria-label="Filter samples" style="margin-top:10px">
+    </div>
+    <div class="samples" id="samples"></div>
+  </section>
+
+  <section class="col">
+    <div class="colhead"><h2>Run a pipeline</h2></div>
+    <div class="pad">
+
+      <div class="section" id="hpc-section" hidden>
+        <h2>Cluster</h2>
+        <div class="hpcpanel">
+          <div class="hpcgrid">
+            <label>Host
+              <input id="h-host" placeholder="cluster.university.kz" autocomplete="off">
+            </label>
+            <label>User
+              <input id="h-user" placeholder="olzhas" autocomplete="off">
+            </label>
+            <label>Port
+              <input id="h-port" type="number" value="22" min="1" max="65535">
+            </label>
+            <label>Sign in with
+              <select id="h-auth">
+                <option value="key">SSH key or agent</option>
+                <option value="password">Password</option>
+              </select>
+            </label>
+            <label id="h-key-wrap">SSH key
+              <input id="h-key" placeholder="~/.ssh/id_ed25519 (blank uses agent)">
+            </label>
+            <label id="h-pw-wrap" hidden>Password
+              <input id="h-pw" type="password" autocomplete="off"
+                     placeholder="held in memory only">
+            </label>
+            <label class="wide">Working directory on the cluster
+              <input id="h-remote" placeholder="/scratch/olzhas/hivpipe">
+            </label>
+            <label class="wide">Reads folder on the cluster
+              <input id="h-data" placeholder="/scratch/olzhas/reads">
+            </label>
+            <label>Scheduler
+              <select id="h-sched">
+                <option value="slurm">Slurm</option>
+                <option value="pbs">PBS / Torque</option>
+                <option value="sge">SGE</option>
+                <option value="none">None, run on the login node</option>
+              </select>
+            </label>
+            <label>Partition or queue
+              <input id="h-queue" placeholder="leave empty for the cluster default">
+            </label>
+            <label>Account
+              <input id="h-account" placeholder="optional">
+            </label>
+            <label>Containers
+              <select id="h-cont">
+                <option value="singularity">Singularity</option>
+                <option value="apptainer">Apptainer</option>
+                <option value="docker">Docker</option>
+                <option value="none">None</option>
+              </select>
+            </label>
+            <label class="wide">Modules to load, comma separated
+              <input id="h-mods" placeholder="nextflow, singularity">
+            </label>
+            <label class="wide">Nextflow command on the cluster
+              <input id="h-nf" placeholder="nextflow" value="nextflow">
+            </label>
+          </div>
+
+          <p class="hint" id="h-pwnote" hidden style="margin:10px 0 0">
+            The password is kept in memory while this app runs and is never
+            written to disk. You will be asked again after a restart. If your
+            cluster also asks for a code or token, use an SSH key instead.
+          </p>
+
+          <div class="uprow" style="margin-top:12px">
+            <button class="upbtn" id="h-save">Save settings</button>
+            <button class="upbtn" id="h-test">Test connection</button>
+            <button class="upbtn" id="h-forget" hidden>Forget password</button>
+            <span class="upmsg" id="h-msg"></span>
+          </div>
+
+          <div class="probe" id="h-probe" hidden></div>
+        </div>
+      </div>
+
+      <div class="pipes" id="pipes" role="group" aria-label="Choose a pipeline"></div>
+
+      <div class="section">
+        <h2>Reference files</h2>
+        <div class="refgrid" id="refs"></div>
+      </div>
+
+      <div class="section">
+        <h2>This computer</h2>
+        <div class="hpcpanel">
+          <div class="controls" style="align-items:flex-end">
+            <div class="field">
+              <label for="mem">Memory to use</label>
+              <select id="mem" style="width:150px;padding:7px 9px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)">
+              </select>
+            </div>
+            <div class="field">
+              <label for="threads">Threads</label>
+              <input id="threads" type="number" min="1" max="128" value="8">
+            </div>
+            <span class="hint" id="machine"></span>
+          </div>
+          <div id="memnote" class="probe" hidden></div>
+        </div>
+      </div>
+
+      <div class="controls" style="margin-top:18px">
+        <button class="go" id="start" disabled>Start run</button>
+        <span class="hint" id="hint">Pick a sample and a pipeline.</span>
+      </div>
+
+      <div class="section">
+        <h2>Current run</h2>
+        <div id="current"><p class="hint">Nothing running yet.</p></div>
+      </div>
+
+      <div class="section">
+        <h2>History</h2>
+        <div class="histwrap">
+          <table class="hist">
+            <thead><tr><th>Sample</th><th>Pipeline</th><th>Status</th><th>QC</th><th>Started</th></tr></thead>
+            <tbody id="hist"><tr><td colspan="5" class="hint" style="padding:16px 14px">No runs yet.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const state = {
+  samples: [], pipes: [], runs: [], refs: {}, refKinds: {},
+  sample: null, pipe: null, watching: null, pinned: false,
+  chosen: {},            // kind -> selected file path
+  location: 'local',     // 'local' or 'hpc'
+  hpc: {}, resources: null, memoryGb: null,
+  logOffset: 0, follow: true, logText: ''
+};
+
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => (
+  {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
+  return r.json();
+}
+
+/* ---------- load ---------- */
+
+async function loadConfig() {
+  const c = await api('/api/config');
+  state.config = c;
+  $('#threads').value = c.threads;
+  state.refKinds = c.ref_kinds || {};
+  state.defaultRef = c.default_reference;
+}
+
+async function loadCapabilities() {
+  let c;
+  try { c = await api('/api/capabilities'); } catch { return; }
+  state.caps = c;
+  if (c.can_run_locally) { $('#capbar').hidden = true; return; }
+
+  const bar = $('#capbar');
+  bar.hidden = false;
+  bar.innerHTML = `
+    <strong>Local runs unavailable</strong>
+    <span class="grow">The assembly pipelines are Linux programs, so running them
+      on this computer needs Docker Desktop. Everything else works now —
+      including sending runs to an HPC cluster.</span>
+    <button id="capmore">What works</button>`;
+
+  $('#capmore').onclick = () => {
+    const open = $('#capdetail');
+    if (open) { open.remove(); return; }
+    const div = document.createElement('div');
+    div.className = 'capdetail';
+    div.id = 'capdetail';
+    div.innerHTML = '<ul>' + c.checks.map(ch => `
+      <li>
+        <span class="mark ${ch.ok ? 'yes' : 'no'}"
+              style="color:${ch.ok ? 'var(--teal)' : 'var(--muted)'}"
+        >${ch.ok ? '✓' : '—'}</span>
+        <span class="what">${esc(ch.name)}</span>
+        <span class="detail">${esc(ch.detail)}</span>
+      </li>`).join('') + '</ul>';
+    bar.after(div);
+  };
+}
+
+async function loadResources() {
+  const chosen = state.memoryGb;
+  const q = `?location=${state.location}` + (chosen ? `&memory_gb=${chosen}` : '');
+  const r = await api('/api/resources' + q);
+  state.resources = r;
+  if (!state.memoryGb) state.memoryGb = r.budget_gb;
+  drawMemory();
+}
+
+function drawMemory() {
+  const r = state.resources;
+  if (!r) return;
+  const m = r.machine;
+
+  const sel = $('#mem');
+  if (!sel.options.length || sel.dataset.loc !== state.location) {
+    sel.dataset.loc = state.location;
+    const steps = [2, 4, 6, 8, 12, 16, 24, 32, 48, 64];
+    const ceiling = state.location === 'hpc'
+      ? 256
+      : Math.max(4, Math.ceil((m.docker_memory_gb || m.host_memory_gb || 8)));
+    const usable = steps.filter(s => s <= ceiling);
+    if (!usable.includes(r.budget_gb)) usable.push(r.budget_gb);
+    usable.sort((a, b) => a - b);
+    sel.innerHTML = usable.map(s =>
+      `<option value="${s}" ${s === state.memoryGb ? 'selected' : ''}>${s} GB${
+        s === r.budget_gb ? ' (suggested)' : ''}</option>`).join('');
+  }
+  sel.value = String(state.memoryGb);
+
+  const bits = [];
+  if (state.location === 'hpc') {
+    bits.push('Limits apply to each cluster job.');
+  } else {
+    if (m.host_memory_gb) bits.push(`${m.host_memory_gb} GB on this machine`);
+    if (m.docker_is_limit) {
+      bits.push(`Docker is capped at ${m.docker_memory_gb} GB — raise it in ` +
+                `Docker Desktop settings if you need more`);
+    }
+    if (m.cpus) bits.push(`${m.cpus} cores`);
+  }
+  $('#machine').textContent = bits.join(' · ');
+
+  // Warn only about the pipeline actually selected.
+  const box = $('#memnote');
+  const a = state.pipe && r.assessment ? r.assessment[state.pipe] : null;
+  if (a && a.message && a.level !== 'ok') {
+    box.hidden = false;
+    box.innerHTML = `<ul><li>
+      <span class="mark ${a.level === 'blocked' ? 'no' : ''}"
+            style="${a.level === 'tight' ? 'color:var(--amber)' : ''}">!</span>
+      <span class="detail" style="font-family:var(--sans);font-size:12.5px">${esc(a.message)}</span>
+    </li></ul>`;
+  } else {
+    box.hidden = true;
+  }
+}
+
+async function loadRefs() {
+  const { references } = await api('/api/references');
+  state.refs = references;
+  // Keep a selection only while the file still exists.
+  for (const kind of Object.keys(state.chosen)) {
+    const still = (references[kind] || []).some(f => f.path === state.chosen[kind]);
+    if (!still) delete state.chosen[kind];
+  }
+  if (!state.chosen.reference && state.defaultRef) state.chosen.reference = state.defaultRef;
+  drawRefs();
+}
+
+async function loadSamples() {
+  const el = $('#samples');
+  try {
+    const { samples } = await api(`/api/samples?location=${state.location}`);
+    state.samples = samples;
+    state.sampleError = null;
+  } catch (e) {
+    state.samples = [];
+    state.sampleError = e.message;
+  }
+  $('#n-samples').textContent = state.samples.length
+    ? `${state.samples.length} found` : '';
+  drawSamples();
+}
+
+async function loadHpc() {
+  const { hpc } = await api('/api/hpc');
+  state.hpc = hpc || {};
+  const set = (id, v) => { const el = $(id); if (el) el.value = v ?? ''; };
+  set('#h-host', hpc.host); set('#h-user', hpc.user);
+  set('#h-port', hpc.port || 22); set('#h-key', hpc.key);
+  set('#h-remote', hpc.remote_dir); set('#h-data', hpc.data_dir);
+  set('#h-queue', hpc.queue); set('#h-account', hpc.account);
+  set('#h-nf', hpc.nextflow || 'nextflow');
+  set('#h-mods', (hpc.modules || []).join(', '));
+  if (hpc.scheduler) $('#h-sched').value = hpc.scheduler;
+  if (hpc.container) $('#h-cont').value = hpc.container;
+  $('#h-auth').value = hpc.auth || 'key';
+  drawAuth(hpc.password_held);
+  drawPaths();
+}
+
+function drawAuth(passwordHeld) {
+  const pw = $('#h-auth').value === 'password';
+  $('#h-key-wrap').hidden = pw;
+  $('#h-pw-wrap').hidden = !pw;
+  $('#h-pwnote').hidden = !pw;
+  $('#h-forget').hidden = !(pw && passwordHeld);
+  if (pw && passwordHeld && !$('#h-pw').value) {
+    $('#h-pw').placeholder = 'saved for this session';
+  }
+}
+
+function hpcForm() {
+  return {
+    host: $('#h-host').value.trim(),
+    user: $('#h-user').value.trim(),
+    port: Number($('#h-port').value) || 22,
+    key: $('#h-key').value.trim(),
+    auth: $('#h-auth').value,
+    remote_dir: $('#h-remote').value.trim(),
+    data_dir: $('#h-data').value.trim(),
+    scheduler: $('#h-sched').value,
+    queue: $('#h-queue').value.trim(),
+    account: $('#h-account').value.trim(),
+    container: $('#h-cont').value,
+    modules: $('#h-mods').value.split(',').map(s => s.trim()).filter(Boolean),
+    nextflow: $('#h-nf').value.trim() || 'nextflow',
+    profile: ''
+  };
+}
+
+function drawPaths() {
+  const c = state.config || {};
+  const h = state.hpc || {};
+  if (state.location === 'hpc' && h.host) {
+    $('#p-data').textContent = `${h.host}:${h.data_dir || '—'}`;
+    $('#p-runs').textContent = c.runs_dir || '';
+    $('#p-profile').textContent =
+      `${h.scheduler || 'slurm'} · ${h.container || 'singularity'}`;
+  } else {
+    $('#p-data').textContent = c.data_dir || '';
+    $('#p-runs').textContent = c.runs_dir || '';
+    $('#p-profile').textContent = 'nextflow · ' + (c.profile || '');
+  }
+  $('#p-version').textContent =
+    (c.version || '?') + ' · ' + (c.build_date || '');
+}
+
+async function setLocation(loc) {
+  state.location = loc;
+  state.sample = null;
+  $('#loc-local').setAttribute('aria-pressed', String(loc === 'local'));
+  $('#loc-hpc').setAttribute('aria-pressed', String(loc === 'hpc'));
+  $('#hpc-section').hidden = loc !== 'hpc';
+  state.memoryGb = null;      // the sensible budget differs per location
+  drawPaths();
+  await Promise.all([loadSamples(), loadResources()]);
+  syncGo();
+}
+
+async function loadPipes(refresh) {
+  const { pipelines } = await api('/api/pipelines' + (refresh ? '?refresh=true' : ''));
+  state.pipes = pipelines;
+  drawPipes();
+}
+
+async function loadRuns() {
+  const { runs } = await api('/api/runs');
+  state.runs = runs;
+  // Follow the active run unless the reader has picked one from History.
+  const live = runs.find(r => ['running', 'queued', 'cancelling'].includes(r.status));
+  if (!state.pinned && live && state.watching !== live.id) watch(live.id);
+  drawHistory();
+  drawCurrent();
+}
+
+/* ---------- draw ---------- */
+
+function drawSamples() {
+  const q = $('#q').value.trim().toLowerCase();
+  const list = state.samples.filter(s => !q || s.name.toLowerCase().includes(q));
+  const el = $('#samples');
+  if (!list.length) {
+    let msg;
+    if (state.sampleError) msg = state.sampleError;
+    else if (state.samples.length) msg = 'No sample matches that filter.';
+    else if (state.location === 'hpc') msg = state.hpc.host
+      ? 'No FASTQ files in the cluster reads folder. Check the path below, then press Rescan.'
+      : 'Fill in the cluster settings below, then press Rescan.';
+    else msg = 'No FASTQ files in the reads folder. Put them there, then press Rescan.';
+    el.innerHTML = `<p class="empty">${esc(msg)}</p>`;
+    return;
+  }
+  el.innerHTML = list.map(s => `
+    <button class="sample" data-id="${esc(s.id)}" aria-pressed="${state.sample === s.id}">
+      <div class="nm">${esc(s.name)}</div>
+      <div class="meta">${esc(s.layout)} · ${s.size_mb} MB${s.folder !== '.' ? ' · ' + esc(s.folder) : ''}</div>
+    </button>`).join('');
+  el.querySelectorAll('.sample').forEach(b =>
+    b.onclick = () => { state.sample = b.dataset.id; drawSamples(); syncGo(); });
+}
+
+function drawPipes() {
+  $('#pipes').innerHTML = state.pipes.map(p => `
+    <button class="pipe" data-id="${esc(p.id)}" aria-pressed="${state.pipe === p.id}"
+            title="Container: ${esc(p.image)}">
+      <span class="dial" aria-hidden="true"></span>
+      <span>
+        <span class="nm">${esc(p.name)}</span>
+        <span class="blurb">${esc(p.blurb)}</span>
+      </span>
+      <span class="tag ok">${esc(p.image.split('/').pop())}</span>
+    </button>`).join('');
+  $('#pipes').querySelectorAll('.pipe').forEach(b =>
+    b.onclick = () => {
+      state.pipe = b.dataset.id;
+      drawPipes(); drawRefs(); drawMemory(); syncGo();
+    });
+}
+
+function drawRefs() {
+  const pipe = state.pipes.find(p => p.id === state.pipe);
+  const uses = pipe ? pipe.uses : Object.keys(state.refKinds);
+  // A required slot is distinguished from a merely usable one: the server
+  // refuses the run without it, so saying so here saves a round trip.
+  const needs = (pipe && pipe.requires) ? pipe.requires : [];
+
+  $('#refs').innerHTML = Object.entries(state.refKinds).map(([kind, label]) => {
+    const files = state.refs[kind] || [];
+    const used = uses.includes(kind);
+    const must = needs.includes(kind);
+    const missing = must && !state.chosen[kind];
+    const opts = [`<option value="">${(kind === 'reference' || must) && files.length
+        ? 'Choose a file' : 'None'}</option>`]
+      .concat(files.map(f =>
+        `<option value="${esc(f.path)}" ${state.chosen[kind] === f.path ? 'selected' : ''}
+         >${esc(f.name)} · ${f.size_kb} kB</option>`)).join('');
+    return `
+      <div class="refslot ${used ? '' : 'off'} ${missing ? 'needed' : ''}">
+        <h3>${esc(label)}${must ? ' <span class="req">required</span>' : ''}</h3>
+        <div class="use">${used
+          ? (must
+              ? (missing
+                  ? esc(pipe.name) + ' cannot run without this'
+                  : esc(pipe.name) + ' requires this')
+              : (pipe ? esc(pipe.name) + ' uses this' : 'Used by some pipelines'))
+          : (pipe ? 'Not used by ' + esc(pipe.name) : 'Used by some pipelines')}</div>
+        <select data-kind="${esc(kind)}" ${used ? '' : 'disabled'}
+                aria-label="${esc(label)} file">${opts}</select>
+        <div class="uprow">
+          <button class="upbtn" data-up="${esc(kind)}">Upload FASTA</button>
+          <span class="upmsg" data-msg="${esc(kind)}"></span>
+        </div>
+      </div>`;
+  }).join('');
+
+  $('#refs').querySelectorAll('select').forEach(sel =>
+    sel.onchange = () => {
+      const k = sel.dataset.kind;
+      if (sel.value) state.chosen[k] = sel.value; else delete state.chosen[k];
+    });
+
+  $('#refs').querySelectorAll('[data-up]').forEach(btn =>
+    btn.onclick = () => uploadRef(btn.dataset.up));
+}
+
+function uploadRef(kind) {
+  const msg = $(`[data-msg="${kind}"]`);
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.fa,.fasta,.fas,.fna';
+  input.onchange = async () => {
+    const file = input.files[0];
+    if (!file) return;
+    msg.className = 'upmsg';
+    msg.textContent = 'Uploading…';
+    const body = new FormData();
+    body.append('kind', kind);
+    body.append('file', file);
+    try {
+      const saved = await api('/api/references', { method: 'POST', body });
+      state.chosen[kind] = saved.path;
+      await loadRefs();
+      const after = $(`[data-msg="${kind}"]`);
+      after.className = 'upmsg good';
+      after.textContent = `Added ${saved.name}`;
+    } catch (e) {
+      msg.className = 'upmsg bad';
+      msg.textContent = e.message;
+    }
+  };
+  input.click();
+}
+
+function syncGo() {
+  const ok = state.sample && state.pipe;
+  $('#start').disabled = !ok;
+  $('#hint').textContent = ok ? '' :
+    !state.sample ? 'Pick a sample from the left.' : 'Pick a pipeline.';
+}
+
+function qcBlock(qc) {
+  if (!qc) return '';
+  const items = (qc.findings || []).map(f =>
+    `<li><strong>${esc(f.kind)}</strong> — ${esc(f.detail)}</li>`).join('');
+  const c = qc.composition;
+  return `<div class="qc">
+    <h3>Structural check</h3>
+    <div class="verdict ${esc(qc.verdict)}">${esc(qc.summary)}</div>
+    ${items ? `<ul>${items}</ul>` : ''}
+    ${c ? `<div class="comp">${c.length.toLocaleString()} bp · ${c.called.toLocaleString()} called
+      · ${c.n_count.toLocaleString()} N · ${c.gap_count.toLocaleString()} gap</div>` : ''}
+  </div>`;
+}
+
+function drawCurrent() {
+  const run = state.runs.find(r => r.id === state.watching) || state.runs[0];
+  const box = $('#current');
+  if (!run) { box.innerHTML = '<p class="hint">Nothing running yet.</p>'; return; }
+
+  const live = run.status === 'running' || run.status === 'cancelling';
+  let label = {
+    queued: 'Queued', running: 'Running', cancelling: 'Stopping',
+    complete: 'Complete', failed: 'Failed',
+    cancelled: 'Cancelled', interrupted: 'Interrupted'
+  }[run.status] || run.status;
+
+  // The pipeline can exit cleanly and still produce an unusable consensus.
+  // Say so in the status bar rather than showing a green result above a
+  // red structural failure.
+  let tone = run.status;
+  if (run.status === 'complete' && run.qc) {
+    if (run.qc.verdict === 'fail') { label = 'Finished, consensus unusable'; tone = 'failed'; }
+    else if (run.qc.verdict === 'warn') { label = 'Finished, check the output'; tone = 'running'; }
+  }
+
+  box.innerHTML = `
+    <div class="readout">
+      <div class="bar ${esc(tone)}">
+        ${live ? '<span class="pulse" aria-hidden="true"></span>' : ''}
+        <span class="state">${esc(label)}</span>
+        <span class="who">${esc(run.sample.name)} · ${esc(run.pipeline_name)}${
+          run.where ? ' · ' + esc(run.where) : ''}</span>
+        <span class="spacer">
+          ${live || run.status === 'queued'
+            ? `<button class="mini" id="cancel">Stop run</button>` : ''}
+          ${run.consensus
+            ? `<a class="mini" href="/api/runs/${esc(run.id)}/consensus">Download consensus</a>` : ''}
+        </span>
+      </div>
+      ${qcBlock(run.qc)}
+      <div class="logwrap">
+        <div class="logbar">
+          <h3>Log</h3>
+          <label><input type="checkbox" id="follow" ${state.follow ? 'checked' : ''}> Follow output</label>
+        </div>
+        <pre class="log" id="log">${run.status === 'queued'
+          ? 'Waiting for a free slot. Output appears here once the run starts.'
+          : 'No output yet.'}</pre>
+      </div>
+      <div class="interpret">
+        <div class="logbar">
+          <h3>Interpret</h3>
+          <button class="mini" id="recheck">Check offline</button>
+          <button class="mini" id="askmore">Ask a model</button>
+        </div>
+        <div id="diag"><p class="hint">Checking\u2026</p></div>
+        <div id="modelpane" hidden></div>
+      </div>
+    </div>`;
+
+  const cancel = $('#cancel');
+  if (cancel) cancel.onclick = async () => {
+    cancel.disabled = true;
+    await api(`/api/runs/${run.id}/cancel`, { method: 'POST' });
+    loadRuns();
+  };
+  $('#follow').onchange = e => state.follow = e.target.checked;
+  $('#recheck').onclick = () => loadDiagnosis(run.id);
+  $('#askmore').onclick = () => toggleModelPane(run.id);
+  loadDiagnosis(run.id);
+
+  if (state.watching !== run.id) watch(run.id);
+  else if (state.logText) $('#log').textContent = state.logText;
+}
+
+/* ---------- interpretation ----------
+   Two layers, in this order. The offline table costs nothing and sends
+   nothing, so it runs on its own. The model is opened by hand. */
+
+async function loadDiagnosis(id) {
+  const box = $('#diag');
+  if (!box) return;
+  try {
+    const d = await api(`/api/runs/${id}/diagnose`);
+    if (!d.findings.length) {
+      box.innerHTML = `<p class="hint">${esc(d.advice)}</p>`;
+      return;
+    }
+    box.innerHTML = `
+      <p class="hint">Checked against the built-in table. Nothing was sent anywhere.</p>
+      ${d.findings.map(f => `
+        <div class="probe">
+          <strong>${esc(f.title)}</strong>
+          <p>${esc(f.why)}</p>
+          <ul>${f.fix.map(x => `<li>${esc(x)}</li>`).join('')}</ul>
+          ${f.evidence && !f.evidence.startsWith('matched on')
+            ? `<p class="hint">matched: <code>${esc(f.evidence)}</code></p>` : ''}
+        </div>`).join('')}`;
+  } catch (e) {
+    box.innerHTML = `<p class="hint">${esc(e.message)}</p>`;
+  }
+}
+
+async function toggleModelPane(id) {
+  const pane = $('#modelpane');
+  if (!pane.hidden) { pane.hidden = true; return; }
+  pane.hidden = false;
+  pane.innerHTML = '<p class="hint">Loading…</p>';
+  const a = await api('/api/assistant');
+  const cfg = a.config;
+  const provOptions = Object.entries(a.providers).map(([k, v]) =>
+    `<option value="${esc(k)}" ${k === cfg.provider ? 'selected' : ''}>${esc(v.label)}</option>`).join('');
+  const models = (a.providers[cfg.provider] || {}).models || [];
+  pane.innerHTML = `
+    <div class="probe">
+      <p class="hint">A model needs an <strong>API key</strong>, not your
+      claude.ai or chatgpt.com password &mdash; those logins cannot be used
+      from another program. Ollama runs a model on this machine and sends
+      nothing.</p>
+      <div class="row">
+        <label>Provider <select id="ai_prov">${provOptions}</select></label>
+        <label>Model <input id="ai_model" value="${esc(cfg.model || models[0] || '')}" list="ai_models"></label>
+        <datalist id="ai_models">${models.map(m => `<option value="${esc(m)}">`).join('')}</datalist>
+      </div>
+      <div class="row">
+        <label>API key <input id="ai_key" type="password" placeholder="${esc(a.key_source)}"></label>
+        <button class="mini" id="ai_savekey">Save key</button>
+        <span class="hint" id="ai_keystate">${esc(a.key_source)}</span>
+      </div>
+      <p class="hint">${esc((a.providers[cfg.provider] || {}).key_hint || '')}</p>
+      <div class="row">
+        <label><input type="checkbox" id="ai_names" ${cfg.send_sample_names ? 'checked' : ''}> Send sample names</label>
+        <label><input type="checkbox" id="ai_paths" ${cfg.send_paths ? 'checked' : ''}> Send file paths</label>
+        <label><input type="checkbox" id="ai_seq" ${cfg.send_sequences ? 'checked' : ''}> Send sequence data</label>
+      </div>
+      <p class="hint">All three are off by default. Consensus statistics are
+      computed here so the sequence itself need not be sent.</p>
+      <div class="row">
+        ${a.presets.map((p, i) =>
+          `<button class="mini preset" data-i="${i}">${esc(p.label)}</button>`).join('')}
+        <button class="mini" id="ai_preview">Show what will be sent</button>
+      </div>
+      <div class="row">
+        <input id="ai_q" placeholder="Ask about this run" style="flex:1">
+        <button class="mini" id="ai_ask">Ask</button>
+      </div>
+      <pre class="log" id="ai_out" style="max-height:320px">Nothing asked yet.</pre>
+      <p class="hint">No drug-resistance or clinical interpretation. Stanford
+      HIVdb is the validated source for those.</p>
+    </div>`;
+
+  const saveCfg = async () => {
+    const body = {
+      provider: $('#ai_prov').value,
+      model: $('#ai_model').value.trim(),
+      ollama_host: cfg.ollama_host,
+      send_sample_names: $('#ai_names').checked,
+      send_paths: $('#ai_paths').checked,
+      send_sequences: $('#ai_seq').checked,
+    };
+    await api('/api/assistant', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body) });
+  };
+  ['ai_names', 'ai_paths', 'ai_seq', 'ai_model'].forEach(k =>
+    $('#' + k).onchange = saveCfg);
+  $('#ai_prov').onchange = async () => { await saveCfg(); toggleModelPane(id); toggleModelPane(id); };
+
+  $('#ai_savekey').onclick = async () => {
+    await api('/api/assistant/key', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: $('#ai_prov').value, key: $('#ai_key').value }) });
+    $('#ai_key').value = '';
+    $('#ai_keystate').textContent = 'saved in this application';
+  };
+
+  const ask = async (question, preview) => {
+    const out = $('#ai_out');
+    out.textContent = preview ? 'Building the payload…' : 'Thinking…';
+    await saveCfg();
+    try {
+      const r = await api(`/api/runs/${id}/ask`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: question || '', preview: !!preview }) });
+      out.textContent = preview
+        ? 'This is the entire text that would be sent:\n\n' + r.preview
+        : r.answer;
+    } catch (e) { out.textContent = e.message; }
+  };
+  pane.querySelectorAll('.preset').forEach(b =>
+    b.onclick = () => ask(a.presets[+b.dataset.i].prompt, false));
+  $('#ai_preview').onclick = () => ask('', true);
+  $('#ai_ask').onclick = () => ask($('#ai_q').value, false);
+  $('#ai_q').onkeydown = e => { if (e.key === 'Enter') ask($('#ai_q').value, false); };
+}
+
+function drawHistory() {
+  const rows = state.runs.map(r => `
+    <tr data-id="${esc(r.id)}" aria-selected="${state.watching === r.id}">
+      <td class="sm">${esc(r.sample.name)}</td>
+      <td>${esc(r.pipeline_name)}${r.location === 'hpc'
+          ? ` <span class="tag ok">${esc(r.where || 'hpc')}</span>` : ''}</td>
+      <td><span class="chip ${esc(r.status)}">${esc(r.status)}</span></td>
+      <td>${r.qc ? `<span class="chip ${r.qc.verdict === 'pass' ? 'complete'
+          : r.qc.verdict === 'fail' ? 'failed' : 'running'}">${esc(r.qc.verdict)}</span>` : '—'}</td>
+      <td class="sm">${esc((r.started_at || r.created_at || '').replace('T', ' ').replace('+00:00', ''))}</td>
+    </tr>`).join('');
+  $('#hist').innerHTML = rows ||
+    '<tr><td colspan="5" class="hint" style="padding:16px 14px">No runs yet.</td></tr>';
+  $('#hist').querySelectorAll('tr[data-id]').forEach(tr =>
+    tr.onclick = () => { watch(tr.dataset.id, true); drawHistory(); drawCurrent(); });
+}
+
+/* ---------- log polling ---------- */
+
+function watch(id, pinned) {
+  state.watching = id;
+  state.pinned = Boolean(pinned);
+  state.logOffset = 0;
+  state.logText = '';
+}
+
+async function pollLog() {
+  if (!state.watching) return;
+  try {
+    const d = await api(`/api/runs/${state.watching}/log?offset=${state.logOffset}`);
+    if (d.text) {
+      state.logText = (state.logOffset === 0 ? '' : state.logText) + d.text;
+      state.logOffset = d.offset;
+      const pre = $('#log');
+      if (pre) {
+        pre.textContent = state.logText;
+        if (state.follow) pre.scrollTop = pre.scrollHeight;
+      }
+    }
+  } catch { /* run may have been removed */ }
+}
+
+/* ---------- events ---------- */
+
+$('#q').oninput = drawSamples;
+$('#rescan').onclick = async () => {
+  $('#rescan').disabled = true;
+  await Promise.all([loadSamples(), loadRefs()]);
+  $('#rescan').disabled = false;
+};
+
+$('#loc-local').onclick = () => setLocation('local');
+$('#loc-hpc').onclick   = () => setLocation('hpc');
+
+$('#mem').onchange = async () => {
+  state.memoryGb = Number($('#mem').value);
+  await loadResources();
+};
+
+$('#h-auth').onchange = () => drawAuth(state.hpc.password_held);
+
+// Settings and the password travel separately: one is saved to disk, the
+// other only ever reaches memory.
+async function pushSettings() {
+  const r = await api('/api/hpc', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(hpcForm())
+  });
+  state.hpc = { ...r.hpc };
+  const typed = $('#h-pw').value;
+  if ($('#h-auth').value === 'password' && typed) {
+    const p = await api('/api/hpc/password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: typed })
+    });
+    state.hpc.password_held = p.password_held;
+    $('#h-pw').value = '';
+  }
+  drawAuth(state.hpc.password_held);
+  return r;
+}
+
+$('#h-save').onclick = async () => {
+  const msg = $('#h-msg');
+  msg.className = 'upmsg'; msg.textContent = 'Saving…';
+  try {
+    await pushSettings();
+    msg.className = 'upmsg good'; msg.textContent = 'Saved';
+    drawPaths();
+    await loadSamples();
+  } catch (e) {
+    msg.className = 'upmsg bad'; msg.textContent = e.message;
+  }
+};
+
+$('#h-forget').onclick = async () => {
+  await api('/api/hpc/password', { method: 'DELETE' });
+  state.hpc.password_held = false;
+  $('#h-pw').value = '';
+  $('#h-pw').placeholder = 'held in memory only';
+  drawAuth(false);
+  $('#h-msg').className = 'upmsg';
+  $('#h-msg').textContent = 'Password forgotten';
+};
+
+$('#h-test').onclick = async () => {
+  const msg = $('#h-msg'), box = $('#h-probe');
+  $('#h-test').disabled = true;
+  msg.className = 'upmsg'; msg.textContent = 'Connecting…';
+  box.hidden = true;
+  try {
+    // Test what is on screen, not what was last saved.
+    await pushSettings();
+    const r = await api('/api/hpc/test', { method: 'POST' });
+    box.hidden = false;
+    box.innerHTML = '<ul>' + r.checks.map(c => `
+      <li>
+        <span class="mark ${c.ok ? 'yes' : 'no'}">${c.ok ? '✓' : '✗'}</span>
+        <span class="what">${esc(c.name)}</span>
+        <span class="detail">${esc(c.detail)}</span>
+      </li>`).join('') + '</ul>';
+    state.hpc = hpcForm();
+    msg.className = 'upmsg ' + (r.ok ? 'good' : 'bad');
+    msg.textContent = r.ok ? 'Cluster ready' : 'Some checks failed';
+    drawPaths();
+    await loadSamples();
+  } catch (e) {
+    msg.className = 'upmsg bad'; msg.textContent = e.message;
+  }
+  $('#h-test').disabled = false;
+};
+
+$('#start').onclick = async () => {
+  const btn = $('#start');
+  btn.disabled = true;
+  try {
+    // Persist whatever is typed in the cluster form before launching.
+    // Without this, filling in a field and pressing Start sent the old
+    // saved settings — so a module typed but not explicitly saved never
+    // reached the cluster, and the run failed for a reason the form says
+    // is already fixed.
+    if (state.location === 'hpc') await pushSettings();
+    const run = await api('/api/runs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        pipeline_id: state.pipe,
+        sample_id: state.sample,
+        threads: Number($('#threads').value) || 8,
+        reference: state.chosen.reference || null,
+        primers:   state.chosen.primers   || null,
+        adapters:  state.chosen.adapters  || null,
+        panel:     state.chosen.panel     || null,
+        location:  state.location,
+        memory_gb: state.memoryGb
+      })
+    });
+    watch(run.id);
+    await loadRuns();
+  } catch (e) {
+    $('#hint').textContent = e.message;
+  }
+  syncGo();
+};
+
+(async function boot() {
+  await loadConfig();
+  await loadHpc();
+  await Promise.all([loadSamples(), loadPipes(), loadRefs(), loadResources()]);
+  await loadCapabilities();
+  await loadRuns();
+  syncGo();
+  setInterval(loadRuns, 3000);
+  setInterval(pollLog, 1200);
+})();
+</script>
+</body>
+</html>
