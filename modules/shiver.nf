@@ -91,13 +91,45 @@ process SHIVER {
         echo "fall back on. Pass --adapters and --primers." >&2
         exit 1; }
 
+    # shiver requires forward read names to end in /1 and reverse in /2, and
+    # quits at the mapping step if they don't. Reads from the public archives
+    # are named "@DRR030147.1 1 length=251" — no suffix at all — so every
+    # SRA- or ENA-derived dataset in a benchmark hits this. Normalise once
+    # here rather than asking for hand-edited FASTQs per sample.
+    #
+    # Keep only the first whitespace-delimited field (shiver reads the name
+    # from there), drop any existing /1 or /2, then append the right one. The
+    # third line of each record is rewritten to a bare '+', since some
+    # archives repeat the full name there and it must not disagree.
+    normalise_names() {
+        local src="\$1" mate="\$2" dest="\$3"
+        if [ "\${src##*.}" = "gz" ]; then zcat -- "\$src"; else cat -- "\$src"; fi \\
+            | awk -v m="\$mate" '
+                NR % 4 == 1 { sub(/[ \\t].*\$/, ""); sub(/\\/[12]\$/, "");
+                              print \$0 "/" m; next }
+                NR % 4 == 3 { print "+"; next }
+                            { print }' \\
+            | gzip -c > "\$dest"
+    }
+
+    normalise_names "${r1}" 1 reads_1.fastq.gz
+    R1=reads_1.fastq.gz
+    ${paired ? 'normalise_names "' + mate2 + '" 2 reads_2.fastq.gz\n    R2=reads_2.fastq.gz' : 'R2=""'}
+
+    # Fail loudly if normalisation produced nothing, rather than letting
+    # shiver report a confusing error about empty input.
+    [ -s "\$R1" ] || { echo "read-name normalisation produced an empty file"; exit 1; }
+
     mkdir -p work && cd work
 
     # PANEL, ADAPT and PRIM are resolved above: a supplied file is relative
     # to this directory, an example is an absolute container path.
     shiver_init.sh init_dir "\$CONFIG" "\$PANEL" "\$ADAPT" "\$PRIM"
 
-    iva -f ../${r1} ${paired ? "-r ../${mate2}" : ''} -t ${task.cpus} contigs_dir \\
+    # Both assembly and mapping read the normalised copies, so the contigs and
+    # the mapped reads carry the same names. \${R2:+...} expands to nothing
+    # when R2 is empty, which is how single-end runs drop the mate argument.
+    iva -f ../\$R1 \${R2:+-r ../\$R2} -t ${task.cpus} contigs_dir \\
         || { echo "iva produced no contigs"; exit 1; }
 
     shiver_align_contigs.sh init_dir "\$CONFIG" \\
@@ -109,7 +141,7 @@ process SHIVER {
 
     shiver_map_reads.sh init_dir "\$CONFIG" \\
         contigs_dir/contigs.fasta ${sample} ${sample}.blast \\
-        "\$REFS" ../${r1} ${paired ? "../${mate2}" : ''}
+        "\$REFS" ../\$R1 \${R2:+../\$R2}
 
     cd ..
     # Prefer the remapped consensus; fall back to the gap-filled round one.

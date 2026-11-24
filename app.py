@@ -584,7 +584,7 @@ def schedule():
 
 # Bumped whenever behaviour changes, so "am I running the new build?"
 # is answerable from the page and from a run log instead of guessed.
-VERSION = "1.1.6"
+VERSION = "1.1.7"
 BUILD_DATE = "2026-11-10"
 
 app = FastAPI(title="HIV pipeline runner", version=VERSION)

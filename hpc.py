@@ -726,7 +726,7 @@ def _explain(code, stderr, host):
 
 # Stamped into every run log, so a log identifies the build that produced
 # it. Keep in step with app.VERSION.
-VERSION = "1.1.6"
+VERSION = "1.1.7"
 BUILD_DATE = "2026-11-10"
 
 # Make `module` available in a shell that never sourced a login profile.
